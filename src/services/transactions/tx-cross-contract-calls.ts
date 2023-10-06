@@ -122,6 +122,7 @@ const createRelayAdaptShieldNFTRecipients = (
     (nftRecipient: RailgunNFTAmountRecipient) => ({
       nftTokenData: createNFTTokenDataFromRailgunNFTAmount(nftRecipient),
       recipientAddress: nftRecipient.recipientAddress,
+      amount: nftRecipient.amount,
     }),
   );
 };
