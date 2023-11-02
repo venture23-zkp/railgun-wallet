@@ -2128,10 +2128,9 @@
   resolved "https://registry.yarnpkg.com/@railgun-community/curve25519-scalarmult-wasm/-/curve25519-scalarmult-wasm-0.1.5.tgz#edb5e40a8f1fdb7f7e0de1d04e8badabe41cb2a8"
   integrity sha512-Cur8uM/IdNW3WzUwdPloDG1CF0rpSBDWq2yGXJMZ7IMeBGdc4Jj0h9tnNMFRZ35ZuCVVbZ3yClmqSa4PsbpdGQ==
 
-"@railgun-community/engine@5.9.1":
+"@railgun-community/engine@git+https://github.com/venture23-zkp/railgun_engine.git#ffbf01f2d035d2ee1d0f3b849afbc8151a62d8df":
   version "5.9.1"
-  resolved "https://registry.yarnpkg.com/@railgun-community/engine/-/engine-5.9.1.tgz#b1b8c220a17f3d83bc7db7b67ac1dd492b749ad3"
-  integrity sha512-lfGWYKP4eJrSg4f6nkgq3HAK8eDDI1mu9tRZURs9MYqhyfNoFpa4SWhQo6dIbbwODNb8XFZnejo9M5DF5V56dA==
+  resolved "git+https://github.com/venture23-zkp/railgun_engine.git#ffbf01f2d035d2ee1d0f3b849afbc8151a62d8df"
   dependencies:
     "@noble/ed25519" "^1.7.1"
     "@noble/hashes" "^1.3.0"
@@ -2150,10 +2149,9 @@
     levelup "^5.1.1"
     msgpack-lite "^0.1.26"
 
-"@railgun-community/shared-models@5.8.5":
+"@railgun-community/shared-models@git+https://github.com/venture23-zkp/shared-models.git#1865a1cd091b231579b1f292f4ac568e58e1c88a":
   version "5.8.5"
-  resolved "https://registry.yarnpkg.com/@railgun-community/shared-models/-/shared-models-5.8.5.tgz#cf9371b70e36411c4d2fb850d4d2a0721a45859e"
-  integrity sha512-htKXxIQs4MxVYFd6tCm0UTL8vRptmZoirzs+MDZELgOLZUbwHLGlmKvgMrnr1j9avWiKPNaAE3Eq+1Vduplkjg==
+  resolved "git+https://github.com/venture23-zkp/shared-models.git#1865a1cd091b231579b1f292f4ac568e58e1c88a"
 
 "@repeaterjs/repeater@3.0.4", "@repeaterjs/repeater@^3.0.4":
   version "3.0.4"

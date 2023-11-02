@@ -48,6 +48,7 @@ module.exports = {
     '@typescript-eslint/no-unsafe-argument': 1,
     '@typescript-eslint/no-unsafe-return': 1,
     '@typescript-eslint/require-await': 0,
+    '@typescript-eslint/restrict-template-expressions': 1,
     'import/order': 0,
     'consistent-return': 0,
     'prefer-destructuring': 0,
@@ -59,7 +60,8 @@ module.exports = {
     'no-warning-comments': 1,
     '@typescript-eslint/no-duplicate-enum-values': 1,
     'no-only-tests/no-only-tests': 1,
-    '@typescript-eslint/strict-boolean-expressions': 2,
+    '@typescript-eslint/strict-boolean-expressions': 1,
+    '@typescript-eslint/restrict-plus-operands': 1,
   },
   overrides: [
     {
