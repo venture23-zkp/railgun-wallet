@@ -9,19 +9,21 @@ import {
 } from '@railgun-community/shared-models';
 import {
   MOCK_DB_ENCRYPTION_KEY,
+  MOCK_FAILING_FALLBACK_PROVIDER_JSON_CONFIG_MUMBAI,
   MOCK_FALLBACK_PROVIDER_JSON_CONFIG_MUMBAI,
 } from '../../../../tests/mocks.test';
 import { closeTestEngine, initTestEngine } from '../../../../tests/setup.test';
-import { walletForID } from '../engine';
+import { getFallbackProviderForNetwork } from '../providers';
+import { loadProvider } from '../load-provider';
+import { createRailgunWallet, walletForID } from '../../wallets/wallets';
 import {
   getUTXOMerkletreeForNetwork,
-  getFallbackProviderForNetwork,
-  loadProvider,
-  getRelayAdaptContractForNetwork,
-  getRailgunSmartWalletContractForNetwork,
   getTXIDMerkletreeForNetwork,
-} from '../providers';
-import { createRailgunWallet } from '../../wallets/wallets';
+} from '../merkletree';
+import {
+  getRailgunSmartWalletContractForNetwork,
+  getRelayAdaptContractForNetwork,
+} from '../contracts';
 
 chai.use(chaiAsPromised);
 const { expect } = chai;
@@ -33,11 +35,28 @@ const txidVersion = TXIDVersion.V2_PoseidonMerkle;
 
 describe('providers', () => {
   before(async () => {
+    await closeTestEngine();
     initTestEngine();
   });
   after(async () => {
     await closeTestEngine();
   });
+
+  it.skip(
+    '[FAILING] Should load provider with json, pull fees, and check created objects',
+    async () => {
+      const response = await loadProvider(
+        MOCK_FAILING_FALLBACK_PROVIDER_JSON_CONFIG_MUMBAI,
+        NetworkName.PolygonMumbai,
+        10000, // pollingInterval
+      );
+      expect(response.feesSerialized).to.deep.equal({
+        shield: '25',
+        unshield: '25',
+        nft: '25',
+      });
+    },
+  ).timeout(20000);
 
   it('Should load provider with json, pull fees, and check created objects', async () => {
     const response = await loadProvider(
@@ -105,7 +124,7 @@ describe('providers', () => {
         NETWORK_CONFIG[NetworkName.PolygonMumbai].chain,
       ),
     ).to.not.be.undefined;
-  }).timeout(20000);
+  }).timeout(15000);
 
   it('Should fail with invalid chain ID', async () => {
     await expect(

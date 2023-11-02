@@ -10,25 +10,35 @@ import {
   poll,
 } from '@railgun-community/shared-models';
 import {
-  getEngine,
-  setOnUTXOMerkletreeScanCallback,
-  setOnTXIDMerkletreeScanCallback,
-  startRailgunEngine,
-  stopRailgunEngine,
-} from '../services/railgun/core/engine';
-import {
   MOCK_BALANCES_UPDATE_CALLBACK,
   MOCK_FALLBACK_PROVIDER_JSON_CONFIG,
+  MOCK_POI_PROOF_PROGRESS_CALLBACK_CALLBACK,
   TEST_WALLET_SOURCE,
 } from './mocks.test';
-import { loadProvider } from '../services/railgun/core/providers';
 import { ArtifactStore } from '../services/artifacts/artifact-store';
-import { setOnBalanceUpdateCallback } from '../services/railgun/wallets/balance-update';
+import {
+  setOnBalanceUpdateCallback,
+  setOnWalletPOIProofProgressCallback,
+} from '../services/railgun/wallets/balance-update';
 import { WalletPOI } from '../services/poi/wallet-poi';
 import { TestWalletPOIRequester } from './poi/test-wallet-poi-requester.test';
 import { TestWalletPOINodeInterface } from './poi/test-wallet-poi-node-interface.test';
 import { MerklerootValidator } from '@railgun-community/engine/dist/models/merkletree-types';
-import { GetLatestValidatedRailgunTxid } from '@railgun-community/engine';
+import {
+  GetLatestValidatedRailgunTxid,
+  SnarkJSGroth16,
+  TXOPOIListStatus,
+} from '@railgun-community/engine';
+import {
+  getEngine,
+  loadProvider,
+  setOnTXIDMerkletreeScanCallback,
+  setOnUTXOMerkletreeScanCallback,
+  startRailgunEngine,
+  stopRailgunEngine,
+} from '../services/railgun/core';
+import { groth16 } from 'snarkjs';
+import { setLoggers } from '../utils';
 
 const ENGINE_TEST_DB = 'test.db';
 const db = new LevelDOWN(ENGINE_TEST_DB);
@@ -48,6 +58,10 @@ before(async () => {
   await rmDirSafe(ENGINE_TEST_DB);
   await rmDirSafe('artifacts-v2.1');
   setupTests();
+});
+
+beforeEach(() => {
+  TestWalletPOINodeInterface.overridePOIsListStatus = TXOPOIListStatus.Missing;
 });
 
 const fileExists = (path: string): Promise<boolean> => {
@@ -113,7 +127,13 @@ export const initTestEngine = (useNativeArtifacts = false) => {
   WalletPOI.getPOILatestValidatedRailgunTxid = () =>
     getLatestValidatedRailgunTxid;
 
+  // Set 'true' to debug tests
   const shouldDebug = false;
+
+  if (shouldDebug) {
+    setLoggers(console.log, console.error);
+  }
+
   startRailgunEngine(
     TEST_WALLET_SOURCE,
     db,
@@ -124,11 +144,15 @@ export const initTestEngine = (useNativeArtifacts = false) => {
     undefined, // poiNodeURL
   );
 
-  const engine = getEngine();
-  const testPOINodeInterface = new TestWalletPOINodeInterface(engine);
+  const testPOINodeInterface = new TestWalletPOINodeInterface();
   WalletPOI.init(testPOINodeInterface, []);
 
+  getEngine().prover.setSnarkJSGroth16(groth16 as SnarkJSGroth16);
+
   setOnBalanceUpdateCallback(MOCK_BALANCES_UPDATE_CALLBACK);
+  setOnWalletPOIProofProgressCallback(
+    MOCK_POI_PROOF_PROGRESS_CALLBACK_CALLBACK,
+  );
 
   setOnUTXOMerkletreeScanCallback(utxoMerkletreeHistoryScanCallback);
   setOnTXIDMerkletreeScanCallback(txidMerkletreeHistoryScanCallback);
@@ -154,10 +178,10 @@ export const pollUntilUTXOMerkletreeScanned = async () => {
     async () => currentUTXOMerkletreeScanStatus,
     status => status === MerkletreeScanStatus.Complete,
     50,
-    30000 / 50, // 30 sec.
+    60000 / 50, // 60 sec.
   );
   if (status !== MerkletreeScanStatus.Complete) {
-    throw new Error(`Merkletree scan should be completed - timed out`);
+    throw new Error(`UTXO merkletree scan should be completed - timed out`);
   }
 };
 
@@ -166,9 +190,9 @@ export const pollUntilTXIDMerkletreeScanned = async () => {
     async () => currentTXIDMerkletreeScanStatus,
     status => status === MerkletreeScanStatus.Complete,
     50,
-    30000 / 50, // 30 sec.
+    90000 / 50, // 90 sec.
   );
   if (status !== MerkletreeScanStatus.Complete) {
-    throw new Error(`Merkletree scan should be completed - timed out`);
+    throw new Error(`TXID merkletree scan should be completed - timed out`);
   }
 };

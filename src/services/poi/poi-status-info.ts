@@ -2,12 +2,12 @@ import {
   TXOsReceivedPOIStatusInfo,
   TXOsSpentPOIStatusInfo,
 } from '@railgun-community/engine';
-import { walletForID } from '../railgun/core';
 import {
   NETWORK_CONFIG,
   NetworkName,
   TXIDVersion,
 } from '@railgun-community/shared-models';
+import { walletForID } from '../railgun/wallets/wallets';
 
 export const getTXOsReceivedPOIStatusInfoForWallet = (
   txidVersion: TXIDVersion,
@@ -29,7 +29,7 @@ export const getTXOsSpentPOIStatusInfoForWallet = (
   return wallet.getTXOsSpentPOIStatusInfo(txidVersion, chain);
 };
 
-export const generatePOIForWalletAndRailgunTxid = (
+export const generatePOIsForWalletAndRailgunTxid = async (
   txidVersion: TXIDVersion,
   networkName: NetworkName,
   walletID: string,
@@ -37,11 +37,16 @@ export const generatePOIForWalletAndRailgunTxid = (
 ): Promise<void> => {
   const chain = NETWORK_CONFIG[networkName].chain;
   const wallet = walletForID(walletID);
-  return wallet.generatePOIsAllSentCommitmentsAndUnshieldEvents(
-    chain,
-    txidVersion,
-    railgunTxid,
-  );
+  await wallet.generatePOIsForRailgunTxid(chain, txidVersion, railgunTxid);
+};
+
+export const generatePOIsForWallet = async (
+  networkName: NetworkName,
+  walletID: string,
+): Promise<void> => {
+  const chain = NETWORK_CONFIG[networkName].chain;
+  const wallet = walletForID(walletID);
+  await wallet.refreshPOIsForAllTXIDVersions(chain);
 };
 
 export const refreshReceivePOIsForWallet = (
@@ -67,4 +72,24 @@ export const refreshSpentPOIsForWallet = (
     chain,
     railgunTxid,
   );
+};
+
+export const getChainTxidsStillPendingSpentPOIs = (
+  txidVersion: TXIDVersion,
+  networkName: NetworkName,
+  walletID: string,
+): Promise<string[]> => {
+  const chain = NETWORK_CONFIG[networkName].chain;
+  const wallet = walletForID(walletID);
+  return wallet.getChainTxidsStillPendingSpentPOIs(txidVersion, chain);
+};
+
+export const getSpendableReceivedChainTxids = (
+  txidVersion: TXIDVersion,
+  networkName: NetworkName,
+  walletID: string,
+): Promise<string[]> => {
+  const chain = NETWORK_CONFIG[networkName].chain;
+  const wallet = walletForID(walletID);
+  return wallet.getSpendableReceivedChainTxids(txidVersion, chain);
 };

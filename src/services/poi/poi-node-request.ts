@@ -11,9 +11,14 @@ import {
   ValidatedRailgunTxidStatus,
   TXIDVersion,
   GetLatestValidatedRailgunTxidParams,
+  SubmitLegacyTransactProofParams,
+  ValidatePOIMerklerootsParams,
+  SingleCommitmentProofsData,
+  SubmitSingleCommitmentProofsParams,
 } from '@railgun-community/shared-models';
 import axios, { AxiosError } from 'axios';
 import { sendErrorMessage } from '../../utils';
+import { LegacyTransactProofData } from '@railgun-community/engine';
 
 export class POINodeRequest {
   private nodeURL: string;
@@ -95,6 +100,21 @@ export class POINodeRequest {
     return status;
   };
 
+  validatePOIMerkleroots = async (
+    txidVersion: TXIDVersion,
+    chain: Chain,
+    listKey: string,
+    poiMerkleroots: string[],
+  ): Promise<boolean> => {
+    const route = `validate-poi-merkleroots/${chain.type}/${chain.id}`;
+    const url = this.getNodeRouteURL(route);
+    const validated = await POINodeRequest.postRequest<
+      ValidatePOIMerklerootsParams,
+      boolean
+    >(url, { txidVersion, listKey, poiMerkleroots });
+    return validated;
+  };
+
   getPOIsPerList = async (
     txidVersion: TXIDVersion,
     chain: Chain,
@@ -149,5 +169,41 @@ export class POINodeRequest {
       listKey,
       transactProofData,
     });
+  };
+
+  submitLegacyTransactProofs = async (
+    txidVersion: TXIDVersion,
+    chain: Chain,
+    listKeys: string[],
+    legacyTransactProofDatas: LegacyTransactProofData[],
+  ) => {
+    const route = `submit-legacy-transact-proofs/${chain.type}/${chain.id}`;
+    const url = this.getNodeRouteURL(route);
+
+    await POINodeRequest.postRequest<SubmitLegacyTransactProofParams, void>(
+      url,
+      {
+        txidVersion,
+        listKeys,
+        legacyTransactProofDatas,
+      },
+    );
+  };
+
+  submitSingleCommitmentProof = async (
+    txidVersion: TXIDVersion,
+    chain: Chain,
+    singleCommitmentProofsData: SingleCommitmentProofsData,
+  ) => {
+    const route = `submit-single-commitment-proofs/${chain.type}/${chain.id}`;
+    const url = this.getNodeRouteURL(route);
+
+    await POINodeRequest.postRequest<SubmitSingleCommitmentProofsParams, void>(
+      url,
+      {
+        txidVersion,
+        singleCommitmentProofsData,
+      },
+    );
   };
 }

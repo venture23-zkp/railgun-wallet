@@ -22,6 +22,7 @@ import {
   compareERC20RecipientArrays,
 } from './tx-notes';
 import { ContractTransaction } from 'ethers';
+import { PreTransactionPOIsPerTxidLeafPerList } from '@railgun-community/engine';
 
 export type ProvedTransaction = {
   proofType: ProofType;
@@ -40,6 +41,7 @@ export type ProvedTransaction = {
   relayerFeeERC20AmountRecipient: Optional<RailgunERC20AmountRecipient>;
   sendWithPublicWallet: boolean;
   overallBatchMinGasPrice: Optional<bigint>;
+  preTransactionPOIsPerTxidLeafPerList: PreTransactionPOIsPerTxidLeafPerList;
   nullifiers: string[];
 };
 
@@ -66,6 +68,7 @@ export const populateProvedTransaction = async (
 ): Promise<{
   transaction: ContractTransaction;
   nullifiers: string[];
+  preTransactionPOIsPerTxidLeafPerList: PreTransactionPOIsPerTxidLeafPerList;
 }> => {
   try {
     validateCachedProvedTransaction(
@@ -93,7 +96,8 @@ export const populateProvedTransaction = async (
     throw new Error(`Invalid proof for this transaction. ${err.message}`);
   }
 
-  const { transaction, nullifiers } = getCachedProvedTransaction();
+  const { transaction, nullifiers, preTransactionPOIsPerTxidLeafPerList } =
+    getCachedProvedTransaction();
 
   setGasDetailsForTransaction(
     networkName,
@@ -102,7 +106,7 @@ export const populateProvedTransaction = async (
     sendWithPublicWallet,
   );
 
-  return { transaction, nullifiers };
+  return { transaction, nullifiers, preTransactionPOIsPerTxidLeafPerList };
 };
 
 export const setCachedProvedTransaction = (tx?: ProvedTransaction) => {
@@ -257,7 +261,10 @@ export const validateCachedProvedTransaction = (
   ) {
     throw new Error('Mismatch: sendWithPublicWallet.');
   } else if (
-    shouldSetOverallBatchMinGasPriceForNetwork(networkName) &&
+    shouldSetOverallBatchMinGasPriceForNetwork(
+      cachedProvedTransaction.sendWithPublicWallet,
+      networkName,
+    ) &&
     overallBatchMinGasPrice !== cachedProvedTransaction.overallBatchMinGasPrice
   ) {
     throw new Error('Mismatch: overallBatchMinGasPrice.');

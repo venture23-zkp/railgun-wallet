@@ -4,7 +4,7 @@ import {
   POIsPerList,
   TXOPOIListStatus,
   POINodeInterface,
-  RailgunEngine,
+  LegacyTransactProofData,
 } from '@railgun-community/engine';
 import { POINodeRequest } from './poi-node-request';
 import {
@@ -15,17 +15,14 @@ import {
   TransactProofData,
   networkForChain,
 } from '@railgun-community/shared-models';
+import { POIRequired } from './poi-required';
 
 export class WalletPOINodeInterface extends POINodeInterface {
   private poiNodeRequest: POINodeRequest;
 
-  // Prevents a circular dependency
-  private engine: RailgunEngine;
-
-  constructor(poiNodeURL: string, engine: RailgunEngine) {
+  constructor(poiNodeURL: string) {
     super();
     this.poiNodeRequest = new POINodeRequest(poiNodeURL);
-    this.engine = engine;
   }
 
   private static poiStatusToTXOPOIStatus = (
@@ -34,12 +31,10 @@ export class WalletPOINodeInterface extends POINodeInterface {
     switch (poiStatus) {
       case POIStatus.Valid:
         return TXOPOIListStatus.Valid;
-      case POIStatus.ShieldPending:
-        return TXOPOIListStatus.ShieldPending;
       case POIStatus.ShieldBlocked:
         return TXOPOIListStatus.ShieldBlocked;
-      case POIStatus.TransactProofSubmitted:
-        return TXOPOIListStatus.TransactProofSubmitted;
+      case POIStatus.ProofSubmitted:
+        return TXOPOIListStatus.ProofSubmitted;
       case POIStatus.Missing:
         return TXOPOIListStatus.Missing;
     }
@@ -60,6 +55,15 @@ export class WalletPOINodeInterface extends POINodeInterface {
   // eslint-disable-next-line class-methods-use-this
   isActive(chain: Chain): boolean {
     return WalletPOINodeInterface.getPOISettings(chain) != null;
+  }
+
+  // eslint-disable-next-line class-methods-use-this
+  async isRequired(chain: Chain): Promise<boolean> {
+    const network = networkForChain(chain);
+    if (!network) {
+      throw new Error(`No network for chain ${chain.type}:${chain.id}`);
+    }
+    return POIRequired.isRequiredForNetwork(network.name);
   }
 
   async getPOIsPerList(
@@ -126,6 +130,20 @@ export class WalletPOINodeInterface extends POINodeInterface {
       chain,
       listKey,
       transactProofData,
+    );
+  }
+
+  async submitLegacyTransactProofs(
+    txidVersion: TXIDVersion,
+    chain: Chain,
+    listKeys: string[],
+    legacyTransactProofDatas: LegacyTransactProofData[],
+  ): Promise<void> {
+    return this.poiNodeRequest.submitLegacyTransactProofs(
+      txidVersion,
+      chain,
+      listKeys,
+      legacyTransactProofDatas,
     );
   }
 }

@@ -42,8 +42,10 @@ import {
   MOCK_TOKEN_FEE,
   MOCK_TRANSACTION_GAS_DETAILS_SERIALIZED_TYPE_2,
 } from '../../../tests/mocks.test';
-import { createRailgunWallet } from '../../railgun/wallets/wallets';
-import { fullWalletForID } from '../../railgun/core/engine';
+import {
+  createRailgunWallet,
+  fullWalletForID,
+} from '../../railgun/wallets/wallets';
 import { setCachedProvedTransaction } from '../proof-cache';
 import {
   createNFTTokenDataFromRailgunNFTAmount,
@@ -141,7 +143,7 @@ const spyOnSetUnshield = () => {
 
 describe('tx-cross-contract-calls', () => {
   before(async function run() {
-    this.timeout(5000);
+    this.timeout(60000);
     initTestEngine();
     await initTestEngineNetwork();
     const railgunWalletInfo = await createRailgunWallet(
@@ -172,11 +174,14 @@ describe('tx-cross-contract-calls', () => {
     railProveStub = Sinon.stub(
       TransactionBatch.prototype,
       'generateTransactions',
-    ).resolves([
-      {
-        nullifiers: MOCK_NULLIFIERS,
-      },
-    ] as TransactionStruct[]);
+    ).resolves({
+      provedTransactions: [
+        {
+          nullifiers: MOCK_NULLIFIERS,
+        },
+      ] as TransactionStruct[],
+      preTransactionPOIsPerTxidLeafPerList: {},
+    });
     railDummyProveStub = Sinon.stub(
       TransactionBatch.prototype,
       'generateDummyTransactions',
@@ -204,7 +209,7 @@ describe('tx-cross-contract-calls', () => {
     await closeTestEngine();
   });
 
-  // UNSHIELD - GAS ESTIMATE
+  // GAS ESTIMATE
 
   it('Should get gas estimates for valid cross contract calls', async () => {
     stubGasEstimateSuccess();
@@ -404,7 +409,7 @@ describe('tx-cross-contract-calls', () => {
     );
   });
 
-  // UNSHIELD - PROVE AND SEND
+  // PROVE AND SEND
 
   it('Should populate tx for valid cross contract calls', async () => {
     stubGasEstimateSuccess();

@@ -1,19 +1,17 @@
 import chai from 'chai';
 import chaiAsPromised from 'chai-as-promised';
-import {
-  fullWalletForID,
-  getEngine,
-  viewOnlyWalletForID,
-} from '../../core/engine';
+import { getEngine } from '../../core/engine';
 import {
   createRailgunWallet,
   createViewOnlyRailgunWallet,
+  fullWalletForID,
   getRailgunAddress,
   getWalletMnemonic,
   getWalletShareableViewingKey,
   loadWalletByID,
   unloadWalletByID,
   validateRailgunAddress,
+  viewOnlyWalletForID,
 } from '../wallets';
 import {
   MOCK_DB_ENCRYPTION_KEY,
@@ -33,7 +31,8 @@ const { expect } = chai;
 let wallet: RailgunWallet;
 
 describe('wallets', () => {
-  before(async () => {
+  before(async function run() {
+    this.timeout(10000);
     initTestEngine();
     await initTestEngineNetwork();
     const railgunWalletInfo = await createRailgunWallet(

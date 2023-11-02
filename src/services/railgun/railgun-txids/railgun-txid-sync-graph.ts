@@ -8,11 +8,7 @@ import {
   isDefined,
   networkForChain,
 } from '@railgun-community/shared-models';
-import {
-  getMeshOptions,
-  getSdk,
-  GetUnshieldRailgunTransactionsByTxidQuery,
-} from './graphql';
+import { getMeshOptions, getSdk } from './graphql';
 import { MeshInstance, getMesh } from '@graphql-mesh/runtime';
 import {
   GraphRailgunTransactions,
@@ -30,6 +26,7 @@ const txsSubgraphSourceNameForNetwork = (networkName: NetworkName): string => {
       return 'txs-ethereum';
     case NetworkName.EthereumGoerli:
       return 'txs-goerli';
+    case NetworkName.EthereumSepolia:
     case NetworkName.BNBChain:
     case NetworkName.Polygon:
     case NetworkName.Arbitrum:
@@ -53,15 +50,42 @@ export const getRailgunTxidsForUnshields = async (
 
   const sdk = getBuiltGraphSDK(network.name);
 
-  const transactions: GetUnshieldRailgunTransactionsByTxidQuery['transactions'] =
-    (await sdk.GetUnshieldRailgunTransactionsByTxid({ txid })).transactions;
+  const transactions: GraphRailgunTransactions = (
+    await sdk.GetRailgunTransactionsByTxid({ txid })
+  ).transactions;
 
-  const railgunTxidsForUnshields: string[] = transactions.map(transaction => {
-    const railgunTxid = getRailgunTransactionIDHex(transaction);
-    return railgunTxid;
-  });
+  const railgunTxidsForUnshields: string[] = transactions
+    .filter(transaction => transaction.hasUnshield)
+    .map(transaction => {
+      const railgunTxid = getRailgunTransactionIDHex(transaction);
+      return railgunTxid;
+    });
 
   return railgunTxidsForUnshields;
+};
+
+export const getRailgunTransactionsForTxid = async (
+  chain: Chain,
+  txid: string,
+): Promise<RailgunTransaction[]> => {
+  const network = networkForChain(chain);
+  if (!network) {
+    return [];
+  }
+
+  const sdk = getBuiltGraphSDK(network.name);
+
+  const railgunTransactions: GraphRailgunTransactions = (
+    await sdk.GetRailgunTransactionsByTxid({ txid })
+  ).transactions;
+
+  const filteredRailgunTransactions: GraphRailgunTransactions =
+    removeDuplicatesByID(railgunTransactions);
+
+  const formattedRailgunTransactions: RailgunTransaction[] =
+    formatRailgunTransactions(filteredRailgunTransactions);
+
+  return formattedRailgunTransactions;
 };
 
 export const quickSyncRailgunTransactions = async (
@@ -147,7 +171,7 @@ const getBuiltGraphClient = async (
     return mesh;
   } catch (err) {
     throw new Error(
-      // eslint-disable-next-line @typescript-eslint/restrict-template-expressions
+      // eslint-disable-next-line @typescript-eslint/restrict-template-expressions, @typescript-eslint/no-unsafe-member-access
       `ERROR getting mesh - if error includes "can't generate schema," make sure to check the filepaths for source schema imports in the built index file: ${err.message}`,
     );
   }

@@ -7,6 +7,7 @@ import {
   TXIDVersion,
 } from '@railgun-community/shared-models';
 import {
+  GenerateTransactionsProgressCallback,
   generateDummyProofTransactions,
   generateProofTransactions,
   generateTransact,
@@ -15,15 +16,11 @@ import {
 } from './tx-generator';
 import { assertValidEthAddress } from '../railgun/wallets/wallets';
 import { setCachedProvedTransaction } from './proof-cache';
-import { getRelayAdaptContractForNetwork } from '../railgun/core/providers';
-import {
-  AdaptID,
-  ProverProgressCallback,
-  randomHex,
-} from '@railgun-community/engine';
+import { AdaptID, randomHex } from '@railgun-community/engine';
 import { assertNotBlockedAddress } from '../../utils/blocked-address';
 import { createRelayAdaptUnshieldERC20AmountRecipients } from './tx-cross-contract-calls';
 import { reportAndSanitizeError } from '../../utils/error';
+import { getRelayAdaptContractForNetwork } from '../railgun/core/contracts';
 
 export const generateUnshieldProof = async (
   txidVersion: TXIDVersion,
@@ -35,31 +32,32 @@ export const generateUnshieldProof = async (
   relayerFeeERC20AmountRecipient: Optional<RailgunERC20AmountRecipient>,
   sendWithPublicWallet: boolean,
   overallBatchMinGasPrice: Optional<bigint>,
-  progressCallback: ProverProgressCallback,
+  progressCallback: GenerateTransactionsProgressCallback,
 ): Promise<void> => {
   try {
     setCachedProvedTransaction(undefined);
 
-    const transactions = await generateProofTransactions(
-      ProofType.Unshield,
-      networkName,
-      railgunWalletID,
-      txidVersion,
-      encryptionKey,
-      false, // showSenderAddressToRecipient
-      undefined, // memoText
-      erc20AmountRecipients,
-      nftAmountRecipients,
-      relayerFeeERC20AmountRecipient,
-      sendWithPublicWallet,
-      undefined, // relayAdaptID
-      false, // useDummyProof
-      overallBatchMinGasPrice,
-      progressCallback,
-    );
-    const transaction = await generateTransact(transactions, networkName);
+    const { provedTransactions, preTransactionPOIsPerTxidLeafPerList } =
+      await generateProofTransactions(
+        ProofType.Unshield,
+        networkName,
+        railgunWalletID,
+        txidVersion,
+        encryptionKey,
+        false, // showSenderAddressToRecipient
+        undefined, // memoText
+        erc20AmountRecipients,
+        nftAmountRecipients,
+        relayerFeeERC20AmountRecipient,
+        sendWithPublicWallet,
+        undefined, // relayAdaptID
+        false, // useDummyProof
+        overallBatchMinGasPrice,
+        progressCallback,
+      );
+    const transaction = await generateTransact(provedTransactions, networkName);
 
-    const nullifiers = nullifiersForTransactions(transactions);
+    const nullifiers = nullifiersForTransactions(provedTransactions);
 
     setCachedProvedTransaction({
       proofType: ProofType.Unshield,
@@ -77,7 +75,69 @@ export const generateUnshieldProof = async (
       relayerFeeERC20AmountRecipient,
       transaction,
       sendWithPublicWallet,
+      preTransactionPOIsPerTxidLeafPerList,
       overallBatchMinGasPrice,
+      nullifiers,
+    });
+  } catch (err) {
+    throw reportAndSanitizeError(generateUnshieldProof.name, err);
+  }
+};
+
+export const generateUnshieldToOriginProof = async (
+  originalShieldTxid: string,
+  txidVersion: TXIDVersion,
+  networkName: NetworkName,
+  railgunWalletID: string,
+  encryptionKey: string,
+  erc20AmountRecipients: RailgunERC20AmountRecipient[],
+  nftAmountRecipients: RailgunNFTAmountRecipient[],
+  progressCallback: GenerateTransactionsProgressCallback,
+): Promise<void> => {
+  try {
+    setCachedProvedTransaction(undefined);
+
+    const { provedTransactions, preTransactionPOIsPerTxidLeafPerList } =
+      await generateProofTransactions(
+        ProofType.Unshield,
+        networkName,
+        railgunWalletID,
+        txidVersion,
+        encryptionKey,
+        false, // showSenderAddressToRecipient
+        undefined, // memoText
+        erc20AmountRecipients,
+        nftAmountRecipients,
+        undefined, // relayerFeeERC20AmountRecipient
+        true, // sendWithPublicWallet
+        undefined, // relayAdaptID
+        false, // useDummyProof
+        undefined, // overallBatchMinGasPrice
+        progressCallback,
+        originalShieldTxid,
+      );
+    const transaction = await generateTransact(provedTransactions, networkName);
+
+    const nullifiers = nullifiersForTransactions(provedTransactions);
+
+    setCachedProvedTransaction({
+      proofType: ProofType.Unshield,
+      txidVersion,
+      railgunWalletID,
+      showSenderAddressToRecipient: false,
+      memoText: undefined,
+      erc20AmountRecipients,
+      nftAmountRecipients,
+      relayAdaptUnshieldERC20Amounts: undefined,
+      relayAdaptUnshieldNFTAmounts: undefined,
+      relayAdaptShieldERC20Recipients: undefined,
+      relayAdaptShieldNFTRecipients: undefined,
+      crossContractCalls: undefined,
+      relayerFeeERC20AmountRecipient: undefined,
+      transaction,
+      sendWithPublicWallet: true,
+      preTransactionPOIsPerTxidLeafPerList,
+      overallBatchMinGasPrice: undefined,
       nullifiers,
     });
   } catch (err) {
@@ -95,7 +155,7 @@ export const generateUnshieldBaseTokenProof = async (
   relayerFeeERC20AmountRecipient: Optional<RailgunERC20AmountRecipient>,
   sendWithPublicWallet: boolean,
   overallBatchMinGasPrice: Optional<bigint>,
-  progressCallback: ProverProgressCallback,
+  progressCallback: GenerateTransactionsProgressCallback,
 ): Promise<void> => {
   try {
     assertNotBlockedAddress(publicWalletAddress);
@@ -158,33 +218,34 @@ export const generateUnshieldBaseTokenProof = async (
     const memoText: Optional<string> = undefined;
 
     // Generate final txs with relay adapt ID.
-    const transactions = await generateProofTransactions(
-      ProofType.UnshieldBaseToken,
-      networkName,
-      railgunWalletID,
-      txidVersion,
-      encryptionKey,
-      showSenderAddressToRecipient,
-      memoText,
-      relayAdaptUnshieldERC20AmountRecipients,
-      relayAdaptUnshieldNFTAmountRecipients,
-      relayerFeeERC20AmountRecipient,
-      sendWithPublicWallet,
-      relayAdaptID,
-      false, // useDummyProof
-      overallBatchMinGasPrice,
-      progressCallback,
-    );
+    const { provedTransactions, preTransactionPOIsPerTxidLeafPerList } =
+      await generateProofTransactions(
+        ProofType.UnshieldBaseToken,
+        networkName,
+        railgunWalletID,
+        txidVersion,
+        encryptionKey,
+        showSenderAddressToRecipient,
+        memoText,
+        relayAdaptUnshieldERC20AmountRecipients,
+        relayAdaptUnshieldNFTAmountRecipients,
+        relayerFeeERC20AmountRecipient,
+        sendWithPublicWallet,
+        relayAdaptID,
+        false, // useDummyProof
+        overallBatchMinGasPrice,
+        progressCallback,
+      );
 
     const transaction = await generateUnshieldBaseToken(
-      transactions,
+      provedTransactions,
       networkName,
       publicWalletAddress,
       relayAdaptParamsRandom,
       false, // useDummyProof
     );
 
-    const nullifiers = nullifiersForTransactions(transactions);
+    const nullifiers = nullifiersForTransactions(provedTransactions);
 
     setCachedProvedTransaction({
       proofType: ProofType.UnshieldBaseToken,
@@ -202,6 +263,7 @@ export const generateUnshieldBaseTokenProof = async (
       relayerFeeERC20AmountRecipient,
       sendWithPublicWallet,
       transaction,
+      preTransactionPOIsPerTxidLeafPerList,
       overallBatchMinGasPrice,
       nullifiers,
     });

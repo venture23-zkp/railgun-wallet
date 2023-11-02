@@ -11,7 +11,7 @@ import {
   pollUntilTXIDMerkletreeScanned,
   pollUntilUTXOMerkletreeScanned,
 } from '../../../../tests/setup.test';
-import { createRailgunWallet } from '../wallets';
+import { createRailgunWallet, walletForID } from '../wallets';
 import { refreshRailgunBalances } from '../balances';
 import {
   Chain,
@@ -20,11 +20,8 @@ import {
   TXIDVersion,
   isDefined,
 } from '@railgun-community/shared-models';
-import {
-  getTXIDMerkletreeForNetwork,
-  loadProvider,
-} from '../../core/providers';
-import { walletForID } from '../../core';
+import { loadProvider } from '../../core/load-provider';
+import { getTXIDMerkletreeForNetwork } from '../../core/merkletree';
 
 chai.use(chaiAsPromised);
 const { expect } = chai;
@@ -38,7 +35,7 @@ const chain: Chain = NETWORK_CONFIG[networkName].chain;
 
 describe('balances-live', () => {
   before(async function run() {
-    this.timeout(30000);
+    this.timeout(60000);
 
     initTestEngine();
 
@@ -80,9 +77,10 @@ describe('balances-live', () => {
     );
 
     const wallet = walletForID(railgunWalletID);
-    const balances = await wallet.getTokenBalancesByTxidVersion(
+    const balances = await wallet.getTokenBalances(
       txidVersion,
       chain,
+      false, // onlySpendable
     );
     expect(Object.keys(balances).length).to.be.greaterThanOrEqual(1);
 

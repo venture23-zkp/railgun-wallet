@@ -3,6 +3,7 @@
 import {
   BlindedCommitmentData,
   Chain,
+  LegacyTransactProofData,
   POINodeInterface,
   POIsPerList,
   RailgunEngine,
@@ -18,13 +19,7 @@ import {
 export const MOCK_LIST_KEY = 'test_list';
 
 export class TestWalletPOINodeInterface extends POINodeInterface {
-  // Prevents a circular dependency
-  private engine: RailgunEngine;
-
-  constructor(engine: RailgunEngine) {
-    super();
-    this.engine = engine;
-  }
+  static overridePOIsListStatus = TXOPOIListStatus.Missing;
 
   private static getPOISettings(chain: Chain) {
     const network = networkForChain(chain);
@@ -44,6 +39,11 @@ export class TestWalletPOINodeInterface extends POINodeInterface {
   }
 
   // eslint-disable-next-line class-methods-use-this
+  async isRequired(chain: Chain): Promise<boolean> {
+    return true;
+  }
+
+  // eslint-disable-next-line class-methods-use-this
   async getPOIsPerList(
     txidVersion: TXIDVersion,
     _chain: Chain,
@@ -56,7 +56,7 @@ export class TestWalletPOINodeInterface extends POINodeInterface {
       listKeys.forEach(listKey => {
         // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
         allMissing[blindedCommitmentData.blindedCommitment][listKey] =
-          TXOPOIListStatus.Missing;
+          TestWalletPOINodeInterface.overridePOIsListStatus;
       });
     });
     return allMissing;
@@ -85,5 +85,15 @@ export class TestWalletPOINodeInterface extends POINodeInterface {
     railgunTxidIfHasUnshield: string,
   ): Promise<void> {
     throw new Error('Could not submit POI - no POI node');
+  }
+
+  // eslint-disable-next-line class-methods-use-this
+  async submitLegacyTransactProofs(
+    txidVersion: TXIDVersion,
+    chain: Chain,
+    listKeys: string[],
+    legacyTransactProofDatas: LegacyTransactProofData[],
+  ): Promise<void> {
+    return Promise.resolve();
   }
 }

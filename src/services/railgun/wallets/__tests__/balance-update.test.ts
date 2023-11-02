@@ -6,24 +6,31 @@ import {
   Chain,
   ChainType,
   getTokenDataERC20,
+  POIProofEventStatus,
 } from '@railgun-community/engine';
 import Sinon, { SinonStub } from 'sinon';
 import {
+  NetworkName,
+  POIProofProgressEvent,
   RailgunBalancesEvent,
+  RailgunWalletBalanceBucket,
   TXIDVersion,
   isDefined,
 } from '@railgun-community/shared-models';
 import {
   onBalancesUpdate,
+  onWalletPOIProofProgress,
   setOnBalanceUpdateCallback,
+  setOnWalletPOIProofProgressCallback,
 } from '../balance-update';
-import { createRailgunWallet } from '../wallets';
-import { fullWalletForID } from '../../core/engine';
+import { createRailgunWallet, fullWalletForID } from '../wallets';
 import {
   MOCK_DB_ENCRYPTION_KEY,
+  MOCK_FALLBACK_PROVIDER_JSON_CONFIG_GOERLI,
   MOCK_MNEMONIC,
 } from '../../../../tests/mocks.test';
 import { closeTestEngine, initTestEngine } from '../../../../tests/setup.test';
+import { loadProvider } from '../../core/load-provider';
 
 chai.use(chaiAsPromised);
 const { expect } = chai;
@@ -35,6 +42,8 @@ const txidVersion = TXIDVersion.V2_PoseidonMerkle;
 let wallet: RailgunWallet;
 
 let walletBalanceStub: SinonStub;
+let walletBalancesByBucketStub: SinonStub;
+let walletTokenBalanceStub: SinonStub;
 
 describe('balance-update', () => {
   before(async () => {
@@ -47,6 +56,11 @@ describe('balance-update', () => {
     if (!isDefined(railgunWalletInfo)) {
       throw new Error('Expected railgunWalletInfo');
     }
+    await loadProvider(
+      MOCK_FALLBACK_PROVIDER_JSON_CONFIG_GOERLI,
+      NetworkName.EthereumGoerli,
+      10000, // pollingInterval
+    );
     wallet = fullWalletForID(railgunWalletInfo.id);
     const tokenAddress = MOCK_TOKEN_ADDRESS.replace('0x', '');
     const tokenData = getTokenDataERC20(tokenAddress);
@@ -58,15 +72,28 @@ describe('balance-update', () => {
       },
     };
     walletBalanceStub = Sinon.stub(
-      RailgunWallet.prototype,
+      RailgunWallet,
       'getTokenBalancesByTxidVersion',
+    ).resolves(balances);
+    walletBalancesByBucketStub = Sinon.stub(
+      RailgunWallet.prototype,
+      'getTokenBalancesByBucket',
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
+    ).resolves({ Spendable: balances } as any);
+    walletTokenBalanceStub = Sinon.stub(
+      RailgunWallet.prototype,
+      'getTokenBalances',
     ).resolves(balances);
   });
   afterEach(() => {
     walletBalanceStub.resetHistory();
+    walletBalancesByBucketStub.resetHistory();
+    walletTokenBalanceStub.resetHistory();
   });
   after(async () => {
     walletBalanceStub.restore();
+    walletBalancesByBucketStub.restore();
+    walletTokenBalanceStub.restore();
     await closeTestEngine();
   });
 
@@ -75,6 +102,7 @@ describe('balance-update', () => {
     const chain: Chain = { type: ChainType.EVM, id: 1 };
     await expect(onBalancesUpdate(txidVersion, wallet, chain)).to.be.fulfilled;
     expect(walletBalanceStub.notCalled).to.be.true;
+    expect(walletBalancesByBucketStub.notCalled).to.be.true;
   });
 
   it('Should parse wallet balances response', async () => {
@@ -83,14 +111,56 @@ describe('balance-update', () => {
       formattedBalances = balancesFormatted;
     };
     setOnBalanceUpdateCallback(callback);
-    const chain: Chain = { type: ChainType.EVM, id: 69 };
+    const chain: Chain = { type: ChainType.EVM, id: 5 };
     await expect(onBalancesUpdate(txidVersion, wallet, chain)).to.be.fulfilled;
-    expect(walletBalanceStub.calledOnce).to.be.true;
+    expect(walletBalancesByBucketStub.calledOnce).to.be.true;
+    expect(formattedBalances.balanceBucket).to.deep.equal(
+      RailgunWalletBalanceBucket.Spendable,
+    );
     expect(formattedBalances.chain).to.deep.equal(chain);
     expect(formattedBalances.erc20Amounts.length).to.equal(1);
     expect(formattedBalances.erc20Amounts[0]).to.deep.equal({
       tokenAddress: '0x0000000000000000000000000000000000012536',
       amount: 10n,
     });
+  });
+
+  it('Should parse poi proof progress response', async () => {
+    let proofProgress!: POIProofProgressEvent;
+    const callback = (proofProgressEvent: POIProofProgressEvent) => {
+      proofProgress = proofProgressEvent;
+    };
+    setOnWalletPOIProofProgressCallback(callback);
+    const chain: Chain = { type: ChainType.EVM, id: 69 };
+    const status = POIProofEventStatus.InProgress;
+    const progress = 5;
+    const listKey = 'listKey';
+    const txid = 'txid';
+    const railgunTxid = 'railgunTxid';
+    const index = 2;
+    const totalCount = 10;
+    onWalletPOIProofProgress(
+      status,
+      txidVersion,
+      wallet,
+      chain,
+      progress,
+      listKey,
+      txid,
+      railgunTxid,
+      index,
+      totalCount,
+      undefined, // errMessage
+    );
+    expect(proofProgress.chain).to.deep.equal(chain);
+    expect(proofProgress.railgunWalletID).to.equal(wallet.id);
+    expect(proofProgress.progress).to.equal(progress);
+    expect(proofProgress.listKey).to.equal(listKey);
+    expect(proofProgress.txid).to.equal(txid);
+    expect(proofProgress.railgunTxid).to.equal(railgunTxid);
+    expect(proofProgress.index).to.equal(index);
+    expect(proofProgress.totalCount).to.equal(totalCount);
+    expect(proofProgress.txidVersion).to.equal(txidVersion);
+    expect(proofProgress.errMessage).to.be.undefined;
   });
 });

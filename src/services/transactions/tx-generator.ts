@@ -4,11 +4,11 @@ import {
   AdaptID,
   OutputType,
   TransactionStruct,
-  ProverProgressCallback,
   getTokenDataERC20,
   getTokenDataNFT,
   ERC721_NOTE_VALUE,
   NFTTokenData,
+  PreTransactionPOIsPerTxidLeafPerList,
 } from '@railgun-community/engine';
 import {
   RailgunERC20Amount,
@@ -20,23 +20,33 @@ import {
   NFTTokenType,
   TXIDVersion,
 } from '@railgun-community/shared-models';
-import { fullWalletForID, walletForID } from '../railgun/core/engine';
 import {
   getRailgunSmartWalletContractForNetwork,
   getRelayAdaptContractForNetwork,
-} from '../railgun/core/providers';
+} from '../railgun/core/contracts';
 import {
   erc20NoteFromERC20AmountRecipient,
   nftNoteFromNFTAmountRecipient,
 } from './tx-notes';
 import { getProver } from '../railgun/core/prover';
-import { assertValidEthAddress, assertValidRailgunAddress } from '../railgun';
+import {
+  assertValidEthAddress,
+  assertValidRailgunAddress,
+  fullWalletForID,
+  walletForID,
+} from '../railgun/wallets/wallets';
 import { assertNotBlockedAddress } from '../../utils/blocked-address';
 import { shouldSetOverallBatchMinGasPriceForNetwork } from '../../utils/gas-price';
 import { ContractTransaction } from 'ethers';
+import { POIRequired } from '../poi/poi-required';
 
 const DUMMY_AMOUNT = 0n;
 export const DUMMY_FROM_ADDRESS = '0x000000000000000000000000000000000000dEaD';
+
+export type GenerateTransactionsProgressCallback = (
+  progress: number,
+  status: string,
+) => void;
 
 export const generateProofTransactions = async (
   proofType: ProofType,
@@ -53,11 +63,15 @@ export const generateProofTransactions = async (
   relayAdaptID: Optional<AdaptID>,
   useDummyProof: boolean,
   overallBatchMinGasPrice: Optional<bigint>,
-  progressCallback: ProverProgressCallback,
-): Promise<TransactionStruct[]> => {
+  progressCallback: GenerateTransactionsProgressCallback,
+  originShieldTxidForSpendabilityOverride?: string,
+): Promise<{
+  provedTransactions: TransactionStruct[];
+  preTransactionPOIsPerTxidLeafPerList: PreTransactionPOIsPerTxidLeafPerList;
+}> => {
   const railgunWallet = fullWalletForID(railgunWalletID);
 
-  const txs: TransactionStruct[] = await transactionsFromERC20Amounts(
+  const txs = await transactionsFromERC20Amounts(
     proofType,
     erc20AmountRecipients,
     nftAmountRecipients,
@@ -73,6 +87,7 @@ export const generateProofTransactions = async (
     useDummyProof,
     overallBatchMinGasPrice,
     progressCallback,
+    originShieldTxidForSpendabilityOverride,
   );
   return txs;
 };
@@ -106,6 +121,7 @@ export const generateDummyProofTransactions = async (
   relayerFeeERC20Amount: Optional<RailgunERC20Amount>,
   sendWithPublicWallet: boolean,
   overallBatchMinGasPrice: Optional<bigint>,
+  originShieldTxidForSpendabilityOverride?: string,
 ): Promise<TransactionStruct[]> => {
   if (!relayerFeeERC20Amount && !sendWithPublicWallet) {
     throw new Error('Must send with relayer or public wallet.');
@@ -124,23 +140,26 @@ export const generateDummyProofTransactions = async (
         }
       : undefined;
 
-  return generateProofTransactions(
-    proofType,
-    networkName,
-    railgunWalletID,
-    txidVersion,
-    encryptionKey,
-    showSenderAddressToRecipient,
-    memoText,
-    erc20AmountRecipients,
-    nftAmountRecipients,
-    relayerFeeERC20AmountRecipient,
-    sendWithPublicWallet,
-    undefined, // relayAdaptID
-    true, // useDummyProof
-    overallBatchMinGasPrice,
-    () => {}, // progressCallback (not necessary for dummy txs)
-  );
+  return (
+    await generateProofTransactions(
+      proofType,
+      networkName,
+      railgunWalletID,
+      txidVersion,
+      encryptionKey,
+      showSenderAddressToRecipient,
+      memoText,
+      erc20AmountRecipients,
+      nftAmountRecipients,
+      relayerFeeERC20AmountRecipient,
+      sendWithPublicWallet,
+      undefined, // relayAdaptID
+      true, // useDummyProof
+      overallBatchMinGasPrice,
+      () => {}, // progressCallback (not necessary for dummy txs)
+      originShieldTxidForSpendabilityOverride,
+    )
+  ).provedTransactions;
 };
 
 export const generateTransact = async (
@@ -201,14 +220,21 @@ const transactionsFromERC20Amounts = async (
   relayAdaptID: Optional<AdaptID>,
   useDummyProof: boolean,
   overallBatchMinGasPrice: Optional<bigint>,
-  progressCallback: ProverProgressCallback,
-): Promise<TransactionStruct[]> => {
+  progressCallback: GenerateTransactionsProgressCallback,
+  originShieldTxidForSpendabilityOverride?: string,
+): Promise<{
+  provedTransactions: TransactionStruct[];
+  preTransactionPOIsPerTxidLeafPerList: PreTransactionPOIsPerTxidLeafPerList;
+}> => {
   const network = NETWORK_CONFIG[networkName];
   const { chain } = network;
 
-  // Removes overallBatchMinGasPrice for L2 networks.
+  // Removes overallBatchMinGasPrice for L2 networks and non-Relayer transactions.
   const validatedOverallBatchMinGasPrice =
-    shouldSetOverallBatchMinGasPriceForNetwork(networkName)
+    shouldSetOverallBatchMinGasPriceForNetwork(
+      sendWithPublicWallet,
+      networkName,
+    )
       ? BigInt(overallBatchMinGasPrice ?? 0)
       : BigInt(0);
 
@@ -261,6 +287,10 @@ const transactionsFromERC20Amounts = async (
     },
   );
 
+  const shouldGeneratePreTransactionPOIs =
+    !sendWithPublicWallet &&
+    (await POIRequired.isRequiredForNetwork(networkName));
+
   const txBatches = await generateAllProofs(
     transactionBatch,
     railgunWallet,
@@ -268,6 +298,8 @@ const transactionsFromERC20Amounts = async (
     encryptionKey,
     useDummyProof,
     progressCallback,
+    shouldGeneratePreTransactionPOIs,
+    originShieldTxidForSpendabilityOverride,
   );
   return txBatches;
 };
@@ -423,27 +455,39 @@ const addTransactionOutputsUnshieldNFT = (
   });
 };
 
-const generateAllProofs = (
+const generateAllProofs = async (
   transactionBatch: TransactionBatch,
   railgunWallet: RailgunWallet,
   txidVersion: TXIDVersion,
   encryptionKey: string,
   useDummyProof: boolean,
-  progressCallback: ProverProgressCallback,
-): Promise<TransactionStruct[]> => {
+  progressCallback: GenerateTransactionsProgressCallback,
+  shouldGeneratePreTransactionPOIs: boolean,
+  originShieldTxidForSpendabilityOverride?: string,
+): Promise<{
+  provedTransactions: TransactionStruct[];
+  preTransactionPOIsPerTxidLeafPerList: PreTransactionPOIsPerTxidLeafPerList;
+}> => {
   const prover = getProver();
-  return useDummyProof
-    ? transactionBatch.generateDummyTransactions(
+  if (useDummyProof) {
+    return {
+      provedTransactions: await transactionBatch.generateDummyTransactions(
         prover,
         railgunWallet,
         txidVersion,
         encryptionKey,
-      )
-    : transactionBatch.generateTransactions(
-        prover,
-        railgunWallet,
-        txidVersion,
-        encryptionKey,
-        progressCallback,
-      );
+        originShieldTxidForSpendabilityOverride,
+      ),
+      preTransactionPOIsPerTxidLeafPerList: {},
+    };
+  }
+  return transactionBatch.generateTransactions(
+    prover,
+    railgunWallet,
+    txidVersion,
+    encryptionKey,
+    progressCallback,
+    shouldGeneratePreTransactionPOIs,
+    originShieldTxidForSpendabilityOverride,
+  );
 };

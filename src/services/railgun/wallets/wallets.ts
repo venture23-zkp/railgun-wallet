@@ -8,17 +8,72 @@ import {
   RailgunEngine,
   hexlify,
   hexStringToBytes,
+  POICurrentProofEventData,
+  ViewOnlyWallet,
 } from '@railgun-community/engine';
 import {
   RailgunWalletInfo,
   NetworkName,
   NETWORK_CONFIG,
   isDefined,
+  Chain,
 } from '@railgun-community/shared-models';
-import { getEngine, walletForID } from '../core/engine';
-import { onBalancesUpdate } from './balance-update';
+import { onBalancesUpdate, onWalletPOIProofProgress } from './balance-update';
 import { reportAndSanitizeError } from '../../../utils/error';
 import { getAddress } from 'ethers';
+import { getEngine } from '../core/engine';
+
+export const awaitWalletScan = (walletID: string, chain: Chain) => {
+  const wallet = walletForID(walletID);
+  return new Promise((resolve, reject) =>
+    wallet.once(
+      EngineEvent.WalletScanComplete,
+      ({ chain: returnedChain }: WalletScannedEventData) =>
+        returnedChain.type === chain.type && returnedChain.id === chain.id
+          ? resolve(returnedChain)
+          : reject(),
+    ),
+  );
+};
+
+export const awaitMultipleWalletScans = async (
+  walletID: string,
+  chain: Chain,
+  numScans: number,
+) => {
+  let i = 0;
+  while (i < numScans) {
+    // eslint-disable-next-line no-await-in-loop
+    await awaitWalletScan(walletID, chain);
+    i += 1;
+  }
+  return Promise.resolve();
+};
+
+export const walletForID = (id: string): AbstractWallet => {
+  const engine = getEngine();
+  const wallet = engine.wallets[id];
+  if (!isDefined(wallet)) {
+    throw new Error('No RAILGUN wallet for ID');
+  }
+  return wallet;
+};
+
+export const fullWalletForID = (id: string): RailgunWallet => {
+  const wallet = walletForID(id);
+  if (!(wallet instanceof RailgunWallet)) {
+    throw new Error('Can not load View-Only wallet.');
+  }
+  return wallet;
+};
+
+export const viewOnlyWalletForID = (id: string): RailgunWallet => {
+  const wallet = walletForID(id);
+  if (!(wallet instanceof ViewOnlyWallet)) {
+    throw new Error('Can only load View-Only wallet.');
+  }
+  return wallet as RailgunWallet;
+};
 
 const subscribeToEvents = (wallet: AbstractWallet) => {
   wallet.on(
@@ -28,13 +83,35 @@ const subscribeToEvents = (wallet: AbstractWallet) => {
       onBalancesUpdate(txidVersion, wallet, chain);
     },
   );
-  // wallet.on(
-  //   EngineEvent.WalletScanComplete,
-  //   ({ txidVersion, chain }: WalletScannedEventData) => {
-  //     // eslint-disable-next-line @typescript-eslint/no-floating-promises
-  //     onWalletPOIProofProgress(txidVersion, wallet, chain);
-  //   },
-  // );
+  wallet.on(
+    EngineEvent.POIProofUpdate,
+    ({
+      status,
+      txidVersion,
+      chain,
+      progress,
+      listKey,
+      txid,
+      railgunTxid,
+      index,
+      totalCount,
+      errorMsg,
+    }: POICurrentProofEventData) => {
+      onWalletPOIProofProgress(
+        status,
+        txidVersion,
+        wallet,
+        chain,
+        progress,
+        listKey,
+        txid,
+        railgunTxid,
+        index,
+        totalCount,
+        errorMsg,
+      );
+    },
+  );
 };
 
 const addressForWallet = (wallet: AbstractWallet): string => {
@@ -89,6 +166,7 @@ const createWallet = async (
   encryptionKey: string,
   mnemonic: string,
   creationBlockNumbers: Optional<MapType<number>>,
+  railgunWalletDerivationIndex?: number,
 ): Promise<RailgunWalletInfo> => {
   const formattedCreationBlockNumbers =
     formatCreationBlockNumbers(creationBlockNumbers);
@@ -97,7 +175,7 @@ const createWallet = async (
   const wallet = await engine.createWalletFromMnemonic(
     encryptionKey,
     mnemonic,
-    0,
+    railgunWalletDerivationIndex ?? 0,
     formattedCreationBlockNumbers,
   );
   subscribeToEvents(wallet);
@@ -126,9 +204,15 @@ export const createRailgunWallet = async (
   encryptionKey: string,
   mnemonic: string,
   creationBlockNumbers: Optional<MapType<number>>,
+  railgunWalletDerivationIndex?: number,
 ): Promise<RailgunWalletInfo> => {
   try {
-    return await createWallet(encryptionKey, mnemonic, creationBlockNumbers);
+    return await createWallet(
+      encryptionKey,
+      mnemonic,
+      creationBlockNumbers,
+      railgunWalletDerivationIndex,
+    );
   } catch (err) {
     throw reportAndSanitizeError(createRailgunWallet.name, err);
   }

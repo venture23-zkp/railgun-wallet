@@ -2,8 +2,9 @@ import {
   NETWORK_CONFIG,
   NetworkName,
   TXIDVersion,
+  isDefined,
 } from '@railgun-community/shared-models';
-import { getEngine } from '../core';
+import { getEngine, getTXIDMerkletreeForNetwork } from '../core';
 
 export const validateRailgunTxidMerkleroot = (
   txidVersion: TXIDVersion,
@@ -36,6 +37,35 @@ export const validateRailgunTxidOccurredBeforeBlockNumber = (
     tree,
     index,
     blockNumber,
+  );
+};
+
+export const validateRailgunTxidExists = async (
+  txidVersion: TXIDVersion,
+  networkName: NetworkName,
+  railgunTxid: string,
+) => {
+  const txidMerkletree = getTXIDMerkletreeForNetwork(txidVersion, networkName);
+  const railgunTransaction = await txidMerkletree.getRailgunTransactionByTxid(
+    railgunTxid,
+  );
+  return isDefined(railgunTransaction);
+};
+
+export const getGlobalUTXOTreePositionForRailgunTransactionCommitment = (
+  txidVersion: TXIDVersion,
+  networkName: NetworkName,
+  tree: number,
+  index: number,
+  commitmentHash: string,
+): Promise<number> => {
+  const chain = NETWORK_CONFIG[networkName].chain;
+  return getEngine().getGlobalUTXOTreePositionForRailgunTransactionCommitment(
+    txidVersion,
+    chain,
+    tree,
+    index,
+    commitmentHash,
   );
 };
 

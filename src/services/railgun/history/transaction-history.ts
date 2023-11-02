@@ -8,26 +8,50 @@ import {
   formatToByteLength,
   ByteLength,
   TransactionHistoryUnshieldTokenAmount,
+  WalletBalanceBucket,
 } from '@railgun-community/engine';
 import {
   TransactionHistoryItem,
-  RailgunERC20Amount,
-  RailgunSendERC20Amount,
-  RailgunReceiveERC20Amount,
-  RailgunSendNFTAmount,
-  RailgunNFTAmount,
-  RailgunReceiveNFTAmount,
-  RailgunUnshieldERC20Amount,
-  RailgunUnshieldNFTAmount,
+  RailgunHistoryERC20Amount,
+  RailgunHistorySendERC20Amount,
+  RailgunHistoryReceiveERC20Amount,
+  RailgunHistorySendNFTAmount,
+  RailgunHistoryNFTAmount,
+  RailgunHistoryReceiveNFTAmount,
+  RailgunHistoryUnshieldERC20Amount,
+  RailgunHistoryUnshieldNFTAmount,
   TransactionHistoryItemCategory,
+  RailgunWalletBalanceBucket,
 } from '@railgun-community/shared-models';
-import { walletForID } from '../core/engine';
 import { parseRailgunTokenAddress } from '../util/bytes';
 import { reportAndSanitizeError } from '../../../utils/error';
+import { walletForID } from '../wallets/wallets';
+
+const getRailgunBalanceBucketFromEngineBalanceBucket = (
+  balanceBucket: WalletBalanceBucket,
+): RailgunWalletBalanceBucket => {
+  switch (balanceBucket) {
+    case WalletBalanceBucket.Spendable:
+      return RailgunWalletBalanceBucket.Spendable;
+    case WalletBalanceBucket.ShieldBlocked:
+      return RailgunWalletBalanceBucket.ShieldBlocked;
+    case WalletBalanceBucket.ShieldPending:
+      return RailgunWalletBalanceBucket.ShieldPending;
+    case WalletBalanceBucket.ProofSubmitted:
+      return RailgunWalletBalanceBucket.ProofSubmitted;
+    case WalletBalanceBucket.MissingInternalPOI:
+      return RailgunWalletBalanceBucket.MissingInternalPOI;
+    case WalletBalanceBucket.MissingExternalPOI:
+      return RailgunWalletBalanceBucket.MissingExternalPOI;
+    case WalletBalanceBucket.Spent:
+      return RailgunWalletBalanceBucket.Spent;
+  }
+  throw new Error('Unrecognized WalletBalanceBucket');
+};
 
 const transactionHistoryReceiveTokenAmountToRailgunERC20Amount = (
   transactionHistoryReceiveTokenAmount: TransactionHistoryReceiveTokenAmount,
-): RailgunReceiveERC20Amount => {
+): RailgunHistoryReceiveERC20Amount => {
   return {
     ...transactionHistoryTokenAmountToRailgunERC20Amount(
       transactionHistoryReceiveTokenAmount,
@@ -35,12 +59,17 @@ const transactionHistoryReceiveTokenAmountToRailgunERC20Amount = (
     memoText: transactionHistoryReceiveTokenAmount.memoText,
     senderAddress: transactionHistoryReceiveTokenAmount.senderAddress,
     shieldFee: transactionHistoryReceiveTokenAmount.shieldFee,
+    hasValidPOIForActiveLists:
+      transactionHistoryReceiveTokenAmount.hasValidPOIForActiveLists,
+    balanceBucket: getRailgunBalanceBucketFromEngineBalanceBucket(
+      transactionHistoryReceiveTokenAmount.balanceBucket,
+    ),
   };
 };
 
 const transactionHistoryReceiveNFTToRailgunNFTAmount = (
   transactionHistoryReceiveTokenAmount: TransactionHistoryReceiveTokenAmount,
-): RailgunReceiveNFTAmount => {
+): RailgunHistoryReceiveNFTAmount => {
   return {
     ...transactionHistoryNFTToRailgunNFTAmount(
       transactionHistoryReceiveTokenAmount,
@@ -48,12 +77,17 @@ const transactionHistoryReceiveNFTToRailgunNFTAmount = (
     memoText: transactionHistoryReceiveTokenAmount.memoText,
     senderAddress: transactionHistoryReceiveTokenAmount.senderAddress,
     shieldFee: transactionHistoryReceiveTokenAmount.shieldFee,
+    hasValidPOIForActiveLists:
+      transactionHistoryReceiveTokenAmount.hasValidPOIForActiveLists,
+    balanceBucket: getRailgunBalanceBucketFromEngineBalanceBucket(
+      transactionHistoryReceiveTokenAmount.balanceBucket,
+    ),
   };
 };
 
 const transactionHistoryTransferTokenAmountToRailgunERC20Amount = (
   transactionHistoryTokenAmount: TransactionHistoryTransferTokenAmount,
-): RailgunSendERC20Amount => {
+): RailgunHistorySendERC20Amount => {
   const walletSource =
     transactionHistoryTokenAmount.noteAnnotationData?.walletSource;
   return {
@@ -63,55 +97,63 @@ const transactionHistoryTransferTokenAmountToRailgunERC20Amount = (
     recipientAddress: transactionHistoryTokenAmount.recipientAddress,
     memoText: transactionHistoryTokenAmount.memoText,
     walletSource,
+    hasValidPOIForActiveLists:
+      transactionHistoryTokenAmount.hasValidPOIForActiveLists,
   };
 };
 
 const transactionHistoryUnshieldTokenAmountToRailgunERC20Amount = (
   transactionHistoryUnshieldTokenAmount: TransactionHistoryUnshieldTokenAmount,
-): RailgunUnshieldERC20Amount => {
+): RailgunHistoryUnshieldERC20Amount => {
   return {
     ...transactionHistoryTransferTokenAmountToRailgunERC20Amount(
       transactionHistoryUnshieldTokenAmount,
     ),
     unshieldFee: transactionHistoryUnshieldTokenAmount.unshieldFee,
+    hasValidPOIForActiveLists:
+      transactionHistoryUnshieldTokenAmount.hasValidPOIForActiveLists,
   };
 };
 
 const transactionHistoryTransferNFTToRailgunNFTAmount = (
   transactionHistoryNFT: TransactionHistoryTransferTokenAmount,
-): RailgunSendNFTAmount => {
+): RailgunHistorySendNFTAmount => {
   const walletSource = transactionHistoryNFT.noteAnnotationData?.walletSource;
   return {
     ...transactionHistoryNFTToRailgunNFTAmount(transactionHistoryNFT),
     memoText: transactionHistoryNFT.memoText,
     walletSource,
     recipientAddress: transactionHistoryNFT.recipientAddress,
+    hasValidPOIForActiveLists: transactionHistoryNFT.hasValidPOIForActiveLists,
   };
 };
 
 const transactionHistoryUnshieldNFTToRailgunNFTAmount = (
   transactionHistoryNFT: TransactionHistoryUnshieldTokenAmount,
-): RailgunUnshieldNFTAmount => {
+): RailgunHistoryUnshieldNFTAmount => {
   return {
     ...transactionHistoryTransferNFTToRailgunNFTAmount(transactionHistoryNFT),
     unshieldFee: transactionHistoryNFT.unshieldFee,
+    hasValidPOIForActiveLists: transactionHistoryNFT.hasValidPOIForActiveLists,
   };
 };
 
 const transactionHistoryTokenAmountToRailgunERC20Amount = (
   transactionHistoryTokenAmount: TransactionHistoryTokenAmount,
-): RailgunERC20Amount => {
+): RailgunHistoryERC20Amount => {
   return {
     tokenAddress: parseRailgunTokenAddress(
       transactionHistoryTokenAmount.tokenData.tokenAddress,
     ).toLowerCase(),
     amount: transactionHistoryTokenAmount.amount,
+    hasValidPOIForActiveLists:
+      transactionHistoryTokenAmount.hasValidPOIForActiveLists,
   };
 };
 
 const transactionHistoryNFTToRailgunNFTAmount = (
   transactionHistoryNFT: TransactionHistoryTokenAmount,
-): RailgunNFTAmount => {
+): RailgunHistoryNFTAmount => {
   return {
     nftAddress: parseRailgunTokenAddress(
       transactionHistoryNFT.tokenData.tokenAddress,
@@ -119,6 +161,7 @@ const transactionHistoryNFTToRailgunNFTAmount = (
     nftTokenType: transactionHistoryNFT.tokenData.tokenType as 1 | 2,
     tokenSubID: transactionHistoryNFT.tokenData.tokenSubID,
     amount: transactionHistoryNFT.amount,
+    hasValidPOIForActiveLists: transactionHistoryNFT.hasValidPOIForActiveLists,
   };
 };
 
@@ -137,7 +180,7 @@ const filterNFT = (tokenAmount: TransactionHistoryTokenAmount) => {
 };
 
 const receiveERC20AmountsHaveShieldFee = (
-  receiveERC20Amounts: RailgunReceiveERC20Amount[],
+  receiveERC20Amounts: RailgunHistoryReceiveERC20Amount[],
 ): boolean => {
   return receiveERC20Amounts.find(amount => amount.shieldFee) != null;
 };

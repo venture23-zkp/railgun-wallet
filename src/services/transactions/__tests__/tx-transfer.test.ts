@@ -46,8 +46,10 @@ import {
   gasEstimateForUnprovenTransfer,
 } from '../tx-transfer';
 import { generateTransferProof } from '../tx-proof-transfer';
-import { createRailgunWallet } from '../../railgun/wallets/wallets';
-import { fullWalletForID } from '../../railgun/core/engine';
+import {
+  createRailgunWallet,
+  fullWalletForID,
+} from '../../railgun/wallets/wallets';
 import { setCachedProvedTransaction } from '../proof-cache';
 import * as txNotes from '../tx-notes';
 import { ContractTransaction, FallbackProvider } from 'ethers';
@@ -168,11 +170,14 @@ describe('tx-transfer', () => {
     railProveStub = Sinon.stub(
       TransactionBatch.prototype,
       'generateTransactions',
-    ).resolves([
-      {
-        nullifiers: MOCK_NULLIFIERS,
-      },
-    ] as TransactionStruct[]);
+    ).resolves({
+      provedTransactions: [
+        {
+          nullifiers: MOCK_NULLIFIERS,
+        },
+      ] as TransactionStruct[],
+      preTransactionPOIsPerTxidLeafPerList: {},
+    });
     railDummyProveStub = Sinon.stub(
       TransactionBatch.prototype,
       'generateDummyTransactions',

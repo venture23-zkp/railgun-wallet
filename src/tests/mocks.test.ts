@@ -9,7 +9,10 @@ import {
   TransactionGasDetails,
   RailgunERC20Recipient,
 } from '@railgun-community/shared-models';
-import { BalancesUpdatedCallback } from '../services/railgun/wallets/balance-update';
+import {
+  BalancesUpdatedCallback,
+  POIProofProgressCallback,
+} from '../services/railgun/wallets/balance-update';
 import { CommitmentCiphertext } from '@railgun-community/engine';
 
 export const MOCK_MNEMONIC =
@@ -170,6 +173,11 @@ export const MOCK_BALANCES_UPDATE_CALLBACK: BalancesUpdatedCallback = () => {
   // noop
 };
 
+export const MOCK_POI_PROOF_PROGRESS_CALLBACK_CALLBACK: POIProofProgressCallback =
+  () => {
+    // noop
+  };
+
 export const MOCK_FALLBACK_PROVIDER_JSON_CONFIG: FallbackProviderJsonConfig = {
   chainId: 137,
   providers: [
@@ -208,6 +216,26 @@ export const MOCK_FALLBACK_PROVIDER_JSON_CONFIG_MUMBAI: FallbackProviderJsonConf
         stallTimeout: 2500,
       },
       {
+        provider: 'https://rpc-mumbai.maticvigil.com',
+        priority: 1,
+        weight: 2,
+        maxLogsPerBatch: 10,
+      },
+    ],
+  };
+
+export const MOCK_FAILING_FALLBACK_PROVIDER_JSON_CONFIG_MUMBAI: FallbackProviderJsonConfig =
+  {
+    chainId: 80001,
+    providers: [
+      {
+        provider: 'https://polygon-mumbai-bor.publicnode.com',
+        priority: 1,
+        weight: 2,
+        maxLogsPerBatch: 10,
+        stallTimeout: 2500,
+      },
+      {
         provider: 'https://endpoints.omniatech.io/v1/matic/mumbai/public',
         priority: 1,
         weight: 2,
@@ -230,6 +258,26 @@ export const MOCK_FALLBACK_PROVIDER_JSON_CONFIG_GOERLI: FallbackProviderJsonConf
       {
         provider: 'https://rpc.ankr.com/eth_goerli',
         priority: 1,
+        weight: 2,
+        maxLogsPerBatch: 10,
+      },
+    ],
+  };
+
+export const MOCK_FALLBACK_PROVIDER_JSON_CONFIG_ETHEREUM: FallbackProviderJsonConfig =
+  {
+    chainId: 1,
+    providers: [
+      {
+        provider: 'https://eth.llamarpc.com',
+        priority: 1,
+        weight: 2,
+        maxLogsPerBatch: 10,
+        stallTimeout: 2500,
+      },
+      {
+        provider: 'https://rpc.ankr.com/eth',
+        priority: 2,
         weight: 2,
         maxLogsPerBatch: 10,
       },

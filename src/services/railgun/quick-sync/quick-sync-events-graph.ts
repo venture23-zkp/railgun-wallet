@@ -4,6 +4,7 @@ import {
   TXIDVersion,
   isDefined,
   networkForChain,
+  promiseTimeout,
   removeUndefineds,
 } from '@railgun-community/shared-models';
 import { EMPTY_EVENTS } from './empty-events';
@@ -30,6 +31,10 @@ const sourceNameForNetwork = (networkName: NetworkName): string => {
       return 'ethereum';
     case NetworkName.EthereumGoerli:
       return 'goerli';
+    case NetworkName.EthereumSepolia:
+      // NOTE: Not supported by hosted service yet, but it is deployed.
+      // Enable by setting NETWORK_CONFIG hasGraphQuickSync to true.
+      return 'sepolia';
     case NetworkName.BNBChain:
       return 'bsc';
     case NetworkName.Polygon:
@@ -53,7 +58,7 @@ export const quickSyncEventsGraphV2 = async (
   startingBlock: number,
 ): Promise<AccumulatedEvents> => {
   const network = networkForChain(chain);
-  if (!network || !network.shouldQuickSync) {
+  if (!network || !network.hasGraphQuickSync) {
     // Return empty logs, Engine will default to full scan.
     return EMPTY_EVENTS;
   }
@@ -138,7 +143,11 @@ const autoPaginatingQuery = async <ReturnType extends { blockNumber: string }>(
   blockNumber: string,
   prevResults: ReturnType[] = [],
 ): Promise<ReturnType[]> => {
-  const newResults = await query(blockNumber);
+  const newResults = await promiseTimeout(
+    query(blockNumber),
+    20000,
+    new Error('Timeout querying Graph for QuickSync of RAILGUN Events'),
+  );
   if (newResults.length === 0) {
     return prevResults;
   }

@@ -12,10 +12,10 @@ import {
   TokenType,
   AddressData,
   CommitmentCiphertext,
-  CommitmentCiphertextStructOutput,
+  getRailgunTransactionIDHex,
+  hashBoundParams,
 } from '@railgun-community/engine';
-import { getEngine, walletForID } from '../core/engine';
-import { getRailgunWalletAddressData } from '../wallets';
+import { getRailgunWalletAddressData, walletForID } from '../wallets';
 import {
   Chain,
   Network,
@@ -24,20 +24,18 @@ import {
 } from '@railgun-community/shared-models';
 import { getFallbackProviderForNetwork } from '../core/providers';
 import { sendMessage } from '../../../utils';
-import { parseRailgunTokenAddress } from '../util';
+import { parseRailgunTokenAddress } from '../util/bytes';
 import { reportAndSanitizeError } from '../../../utils/error';
 import { Contract, ContractTransaction, Result } from 'ethers';
+import { TransactionStructOutput } from '@railgun-community/engine/dist/abi/typechain/RailgunSmartWallet';
+import { getEngine } from '../core/engine';
 
-type BoundParams = {
-  // ...
-  commitmentCiphertext: CommitmentCiphertextStructOutput[];
-};
-
-type TransactionData = {
-  // ...
-  commitments: string[];
-  boundParams: BoundParams;
-};
+export type ExtractedRailgunTransactionData = {
+  railgunTxid: string;
+  utxoTreeIn: bigint;
+  firstCommitment: Optional<string>;
+  firstCommitmentNotePublicKey: Optional<bigint>;
+}[];
 
 enum TransactionName {
   RailgunSmartWallet = 'transact',
@@ -75,6 +73,28 @@ export const extractFirstNoteERC20AmountMapFromTransactionRequest = (
   );
 };
 
+export const extractRailgunTransactionDataFromTransactionRequest = (
+  railgunWalletID: string,
+  network: Network,
+  transactionRequest: ContractTransaction,
+  useRelayAdapt: boolean,
+): Promise<ExtractedRailgunTransactionData> => {
+  const transactionName = useRelayAdapt
+    ? TransactionName.RelayAdapt
+    : TransactionName.RailgunSmartWallet;
+  const contractAddress = useRelayAdapt
+    ? network.relayAdaptContract
+    : network.proxyContract;
+
+  return extractRailgunTransactionData(
+    railgunWalletID,
+    network,
+    transactionRequest,
+    transactionName,
+    contractAddress,
+  );
+};
+
 const recursivelyDecodeResult = (result: Result): any => {
   if (typeof result !== 'object') {
     // End (primitive) value
@@ -97,13 +117,12 @@ const recursivelyDecodeResult = (result: Result): any => {
   }
 };
 
-const extractFirstNoteERC20AmountMap = async (
-  railgunWalletID: string,
+const getRailgunTransactionRequests = (
   network: Network,
   transactionRequest: ContractTransaction,
   transactionName: TransactionName,
   contractAddress: string,
-): Promise<MapType<bigint>> => {
+): TransactionStructOutput[] => {
   const abi = getABIForTransaction(transactionName);
 
   if (
@@ -129,8 +148,21 @@ const extractFirstNoteERC20AmountMap = async (
     throw new Error(`Contract method invalid: expected ${transactionName}`);
   }
 
+  // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
   const args = recursivelyDecodeResult(parsedTransaction.args);
 
+  // eslint-disable-next-line no-underscore-dangle
+  const railgunTxs: TransactionStructOutput[] = args._transactions;
+  return railgunTxs;
+};
+
+const extractFirstNoteERC20AmountMap = async (
+  railgunWalletID: string,
+  network: Network,
+  transactionRequest: ContractTransaction,
+  transactionName: TransactionName,
+  contractAddress: string,
+): Promise<MapType<bigint>> => {
   const railgunWallet = walletForID(railgunWalletID);
   const railgunWalletAddress = railgunWallet.getAddress();
   const receivingViewingPrivateKey = railgunWallet.viewingKeyPair.privateKey;
@@ -139,11 +171,15 @@ const extractFirstNoteERC20AmountMap = async (
 
   const erc20PaymentAmounts: MapType<bigint> = {};
 
-  // eslint-disable-next-line no-underscore-dangle
-  const railgunTxs: TransactionData[] = args._transactions;
+  const railgunTxs: TransactionStructOutput[] = getRailgunTransactionRequests(
+    network,
+    transactionRequest,
+    transactionName,
+    contractAddress,
+  );
 
   await Promise.all(
-    railgunTxs.map(async (railgunTx: TransactionData) => {
+    railgunTxs.map(async (railgunTx: TransactionStructOutput) => {
       const { commitments, boundParams } = railgunTx;
 
       // Extract first commitment (index 0)
@@ -182,6 +218,69 @@ const extractFirstNoteERC20AmountMap = async (
   );
 
   return erc20PaymentAmounts;
+};
+
+const extractRailgunTransactionData = (
+  railgunWalletID: string,
+  network: Network,
+  transactionRequest: ContractTransaction,
+  transactionName: TransactionName,
+  contractAddress: string,
+): Promise<ExtractedRailgunTransactionData> => {
+  const railgunWallet = walletForID(railgunWalletID);
+  const railgunWalletAddress = railgunWallet.getAddress();
+  const receivingViewingPrivateKey = railgunWallet.viewingKeyPair.privateKey;
+  const receivingRailgunAddressData =
+    getRailgunWalletAddressData(railgunWalletAddress);
+
+  const railgunTxs: TransactionStructOutput[] = getRailgunTransactionRequests(
+    network,
+    transactionRequest,
+    transactionName,
+    contractAddress,
+  );
+
+  return Promise.all(
+    railgunTxs.map(async (railgunTx: TransactionStructOutput) => {
+      const { commitments, nullifiers, boundParams } = railgunTx;
+
+      const boundParamsHash = nToHex(
+        hashBoundParams(boundParams),
+        ByteLength.UINT_256,
+        true,
+      );
+      const railgunTxid = getRailgunTransactionIDHex({
+        nullifiers,
+        commitments,
+        boundParamsHash,
+      });
+
+      // Extract first commitment (index 0)
+      const index = 0;
+      const commitmentCiphertextStructOutput =
+        boundParams.commitmentCiphertext[index];
+
+      const commitmentCiphertext = formatCommitmentCiphertext(
+        commitmentCiphertextStructOutput,
+      );
+
+      // Get NPK for first note, if addressed to current wallet.
+      const firstCommitmentNotePublicKey =
+        await extractNPKFromCommitmentCiphertext(
+          network,
+          commitmentCiphertext,
+          receivingViewingPrivateKey,
+          receivingRailgunAddressData,
+        );
+
+      return {
+        railgunTxid,
+        utxoTreeIn: boundParams.treeNumber,
+        firstCommitmentNotePublicKey,
+        firstCommitment: commitments[0],
+      };
+    }),
+  );
 };
 
 const decryptReceiverNoteSafe = async (
@@ -228,6 +327,21 @@ const decryptReceiverNoteSafe = async (
     reportAndSanitizeError(decryptReceiverNoteSafe.name, err);
     return undefined;
   }
+};
+
+export const extractNPKFromCommitmentCiphertext = async (
+  network: Network,
+  commitmentCiphertext: CommitmentCiphertext,
+  receivingViewingPrivateKey: Uint8Array,
+  receivingRailgunAddressData: AddressData,
+): Promise<Optional<bigint>> => {
+  const decryptedReceiverNote = await decryptReceiverNoteSafe(
+    commitmentCiphertext,
+    receivingViewingPrivateKey,
+    receivingRailgunAddressData,
+    network.chain,
+  );
+  return decryptedReceiverNote?.notePublicKey;
 };
 
 export const extractERC20AmountFromCommitmentCiphertext = async (
@@ -282,4 +396,4 @@ export const extractERC20AmountFromCommitmentCiphertext = async (
   return erc20Amount;
 };
 
-export { CommitmentCiphertext };
+export { CommitmentCiphertext, TransactNote };
